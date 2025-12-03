@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>CSV Reader</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            margin-top: 20px;
+            width: 100%;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        th, td {
+            border: 1px solid #aaa;
+            padding: 5px 10px;
+            text-align: left;
+        }
+        th { background-color: #eee; }
+        tbody tr:nth-child(even) { background-color: #f9f9f9; }
+    </style>
+</head>
+
+<body>
+
+    <div id="counters" style="font-size:14px; margin-bottom:10px; line-height:1.4;">
+        <strong>Total WPs:</strong> <span id="totalCount">0</span>
+    </div>
+
+    <div style="margin-bottom: 15px; display:flex; gap:10px;">
+        <select id="districtFilter">
+            <option value="">Filter by District</option>
+        </select>
+
+        <select id="taFilter">
+            <option value="">Filter by TA</option>
+        </select>
+    </div>
+
+    <div id="tableContainer"></div>
+    <center><i>Only showing maximum of 10 results</i></center>
+    <script>
+        const district_codes = {
+            "Balaka": "BLK", "Blantyre": "BT", "Chikwawa": "CK", "Chiradzulu": "CZ",
+            "Chitipa": "CP", "Dedza": "DZ", "Dowa": "DA", "Karonga": "KA",
+            "Kasungu": "KU", "Likoma": "LA", "Lilongwe": "LL", "Machinga": "MHG",
+            "Mangochi": "MH", "Mchinji": "MC", "Mulanje": "MJ", "Mwanza": "MN",
+            "Mzimba": "MZ", "Nkhata Bay": "NB", "Nkhotakota": "KK", "Nsanje": "NA",
+            "Ntcheu": "NU", "Ntchisi": "NS", "Phalombe": "PE", "Rumphi": "RU",
+            "Salima": "SA", "Thyolo": "TO", "Zomba": "ZA", "Neno": "NE"
+        };
+
+        let allData = [];
+        let tableHeaders = [];
+
+        window.onload = function() {
+            loadCSV("water_points.csv");
+        };
+
+        function loadCSV(filePath) {
+            fetch(filePath)
+            .then(response => response.text())
+            .then(csvText => processCSV(csvText))
+            .catch(error => alert("Error loading CSV: " + error));
+        }
+
+        function processCSV(csvText) {
+            const lines = csvText.trim().split(/\r?\n/);
+
+            let headers = lines[0]
+                .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+                .map(h => h.replace(/^"|"$/g, '').trim());
+
+            headers.push("new_uid");
+            tableHeaders = headers;
+
+            const dataObjects = lines.slice(1).map(line => {
+                const cells = line
+                    .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+                    .map(cell => cell.replace(/^"|"$/g, '').trim());
+
+                const obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = cells[index] || "";
+                });
+                return obj;
+            });
+
+            const seqCounters = {};
+            dataObjects.forEach(obj => {
+                const district = obj["Administrative region > District of Malawi"];
+                const ta = obj["Administrative region > Traditional Authority of Malawi"];
+                const type = obj["Type"];
+
+                const districtCode = district_codes[district] || "XXX";
+                const taParts = ta.split(" ");
+                const taCode = (taParts[1] || "XXX").substring(0, 4).toUpperCase();
+                const typeCode = (type || "XXX").substring(0, 4).toUpperCase();
+
+                const key = `${districtCode}-${taCode}-${typeCode}`;
+                if (!seqCounters[key]) seqCounters[key] = 1;
+
+                const seq = seqCounters[key];
+                obj.new_uid = `${districtCode}/${taCode}/${typeCode}/${String(seq).padStart(3, "0")}`;
+
+                seqCounters[key]++;
+            });
+
+            allData = dataObjects;
+
+            populateFilters(allData);
+
+            updateCounters(allData, "", "");
+            renderTable(allData.slice(0, 20), tableHeaders);
+        }
+
+        function populateFilters(data) {
+            const districtSelect = document.getElementById("districtFilter");
+            const taSelect = document.getElementById("taFilter");
+
+            const districts = [...new Set(data.map(x => x["Administrative region > District of Malawi"]))].sort();
+            const tas = [...new Set(data.map(x => x["Administrative region > Traditional Authority of Malawi"]))].sort();
+
+            districtSelect.innerHTML = `<option value="">Filter by District</option>`;
+            districts.forEach(d => districtSelect.innerHTML += `<option value="${d}">${d}</option>`);
+
+            taSelect.innerHTML = `<option value="">Filter by TA</option>`;
+            tas.forEach(t => taSelect.innerHTML += `<option value="${t}">${t}</option>`);
+
+            districtSelect.addEventListener("change", applyFilters);
+            taSelect.addEventListener("change", applyFilters);
+        }
+
+        function applyFilters() {
+            const district = document.getElementById("districtFilter").value;
+            const ta = document.getElementById("taFilter").value;
+
+            let filtered = allData;
+
+            if (district) {
+                filtered = filtered.filter(x =>
+                    x["Administrative region > District of Malawi"] === district
+                );
+
+                const tas = [...new Set(filtered.map(x =>
+                    x["Administrative region > Traditional Authority of Malawi"]
+                ))].sort();
+
+                const taSelect = document.getElementById("taFilter");
+                taSelect.innerHTML = `<option value="">Filter by TA</option>`;
+                tas.forEach(t => taSelect.innerHTML += `<option value="${t}">${t}</option>`);
+            }
+
+            if (ta) {
+                filtered = filtered.filter(x =>
+                    x["Administrative region > Traditional Authority of Malawi"] === ta
+                );
+            }
+
+            updateCounters(filtered, district, ta);
+            renderTable(filtered.slice(0, 40), tableHeaders);
+        }
+
+        function updateCounters(filteredData, district, ta) {
+            const total = allData.length;
+
+            const countersDiv = document.getElementById("counters");
+            countersDiv.innerHTML = `<strong>Total WPs:</strong> ${total.toLocaleString()}`;
+
+            if (district) {
+                const districtCount = allData.filter(x =>
+                    x["Administrative region > District of Malawi"] === district
+                ).length;
+
+                countersDiv.innerHTML += `<br><strong>${district}:</strong> ${districtCount.toLocaleString()}`;
+            }
+
+            if (ta) {
+                const taCount = allData.filter(x =>
+                    x["Administrative region > Traditional Authority of Malawi"] === ta
+                ).length;
+
+                countersDiv.innerHTML += `<br><strong>${ta}:</strong> ${taCount.toLocaleString()}`;
+            }
+        }
+
+        function renderTable(data, headers) {
+            const container = document.getElementById("tableContainer");
+            container.innerHTML = "";
+
+            const table = document.createElement("table");
+            const thead = document.createElement("thead");
+            const headerRow = document.createElement("tr");
+
+            headers.forEach(header => {
+                const th = document.createElement("th");
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement("tbody");
+            data.forEach(row => {
+                const tr = document.createElement("tr");
+                headers.forEach(header => {
+                    const td = document.createElement("td");
+                    td.textContent = row[header] || "";
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
+    </script>
+
+</body>
+</html>

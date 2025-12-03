@@ -11,13 +11,21 @@
             font-family: Arial, sans-serif;
             font-size: 12px;
         }
-        th, td {
+
+        th,
+        td {
             border: 1px solid #aaa;
             padding: 5px 10px;
             text-align: left;
         }
-        th { background-color: #eee; }
-        tbody tr:nth-child(even) { background-color: #f9f9f9; }
+
+        th {
+            background-color: #eee;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
     </style>
 </head>
 
@@ -53,15 +61,15 @@
         let allData = [];
         let tableHeaders = [];
 
-        window.onload = function() {
+        window.onload = function () {
             loadCSV("water_points.csv");
         };
 
         function loadCSV(filePath) {
             fetch(filePath)
-            .then(response => response.text())
-            .then(csvText => processCSV(csvText))
-            .catch(error => alert("Error loading CSV: " + error));
+                .then(response => response.text())
+                .then(csvText => processCSV(csvText))
+                .catch(error => alert("Error loading CSV: " + error));
         }
 
         function processCSV(csvText) {
@@ -106,7 +114,10 @@
                 seqCounters[key]++;
             });
 
-            allData = dataObjects;
+            allData = dataObjects.filter(
+                x => x.Type && x.Type !== "Unprotected dug well"
+            );
+
 
             populateFilters(allData);
 
@@ -218,4 +229,5 @@
     </script>
 
 </body>
+
 </html>
